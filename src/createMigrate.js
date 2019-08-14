@@ -6,7 +6,8 @@ import type { PersistedState, MigrationManifest } from './types'
 
 export default function createMigrate(
   migrations: MigrationManifest,
-  config?: { debug: boolean }
+  config?: { debug: boolean },
+  downgradeMigrations?: MigrationManifest
 ) {
   let { debug } = config || {}
   return function(
@@ -28,16 +29,31 @@ export default function createMigrate(
         console.log('redux-persist: versions match, noop migration')
       return Promise.resolve(state)
     }
-    if (inboundVersion > currentVersion) {
-      if (process.env.NODE_ENV !== 'production')
-        console.error('redux-persist: downgrading version is not supported')
-      return Promise.resolve(state)
-    }
 
-    let migrationKeys = Object.keys(migrations)
-      .map(ver => parseInt(ver))
-      .filter(key => currentVersion >= key && key > inboundVersion)
-      .sort((a, b) => a - b)
+    let migrationKeys
+    if (inboundVersion > currentVersion) {
+      if (process.env.NODE_ENV !== 'production' && debug)
+        console.log(
+          `redux-persist: downgrading from version ${inboundVersion} to version ${currentVersion}`
+        )
+      if (!downgradeMigrations) {
+        console.error(
+          'redux-persist: not possibble to downgrade. downgradeMigrations has not been defined.'
+        )
+        return Promise.resolve(state)
+      }
+      // When downgrading we want to sort the migration functions in descending order
+      migrationKeys = Object.keys(downgradeMigrations)
+        .map(ver => parseInt(ver))
+        .filter(key => inboundVersion >= key && key > currentVersion)
+        .sort((a, b) => b - a)
+    } else {
+      // When upgrading the applying order is instead ascending
+      migrationKeys = Object.keys(migrations)
+        .map(ver => parseInt(ver))
+        .filter(key => currentVersion >= key && key > inboundVersion)
+        .sort((a, b) => a - b)
+    }
 
     if (process.env.NODE_ENV !== 'production' && debug)
       console.log('redux-persist: migrationKeys', migrationKeys)
